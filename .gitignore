@@ -1,24 +1,296 @@
-# Compiled class file
-*.class
-
-# Log file
-*.log
-
-# BlueJ files
-*.ctxt
-
-# Mobile Tools for Java (J2ME)
-.mtj.tmp/
-
-# Package Files #
-*.jar
-*.war
-*.nar
-*.ear
-*.zip
-*.tar.gz
-*.rar
-
-# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
-hs_err_pid*
-replay_pid*
+import java.io.BufferedWriter; 
+import java.io.FileWriter;
+ import java.io.IOException; 
+import java.sql.ResultSet; 
+import java.sql.SQLException; 
+import java.util.HashMap; 
+import java.util.Scanner;
+ public class ArrangementDriver {
+ private DBConnector dbConnection;
+ private Scanner scanner = new Scanner(System.in);
+ private String getConnection() throws SQLException, ClassNotFoundException {
+ this.dbConnection = new DBConnector();
+ if (dbConnection.ping()){
+ return "\nConnection established"; 
+}else{
+ return "\nConnection failed";
+ }
+ }
+ public void run() throws SQLException, ClassNotFoundException {
+ while(true){
+ String option;
+ System.out.print("\n1. Connect to MYSQL database"+ 
+"\n2. Ping MYSQL server"+
+ "\n3. Arrange students in exam halls"+
+ "\n4. Exit"+
+ "\n\nChoose an option from above:"
+ );
+ option = scanner.nextLine();
+ 13
+switch (option){
+ case "1": 
+System.out.println(getConnection()); 
+break;
+ case "2":
+ if (dbConnection!=null){
+ if (dbConnection.ping()){
+ System.out.println("\nConnection status online!\n");
+ }
+ }else{
+ System.out.println("\nConnection status offline!\n");
+ }
+ break;
+ case "3":
+ if (dbConnection == null){
+ System.out.println("\nPlease connect to database(1). You can check the status by ping.(2)");
+ }else {
+ arrange();
+ }
+ break;
+ case "4": 
+dbConnection.closeConnection(); 
+System.exit(0);
+ break;
+ default:
+ System.out.println("Please select a valid option!");
+ }
+ }
+ }
+ private void arrange() throws SQLException {
+ ResultSet studentsSet = dbConnection.getStudentsResultSet(); 
+ResultSet examHallSet = dbConnection.getExamHallsResultSet(); 
+boolean nothingToArrange = true;
+ 14
+while (examHallSet.next() && studentsSet.next()) {
+ nothingToArrange = false;
+ int hallNumber = examHallSet.getInt("hall_no");
+ int hallFloor = examHallSet.getInt("hall_floor");
+ int hallCapacity = examHallSet.getInt("hall_capacity");
+ ExamHall hall = new ExamHall();
+ hall.setHallNumber(hallNumber);
+ hall.setHallFloor(hallFloor);
+ for (int i=0; i<hallCapacity; i++){
+ if (i!=0){
+ if (! studentsSet.next()){
+ break;
+ }
+ }
+ hall.addAllocation(studentsSet.getString("rollno"), studentsSet.getString("student_name"));
+ }
+ String HTMLout = getHtmlOut(hall);
+ saveHtmlToFile(HTMLout, String.valueOf(hallNumber));
+ }
+ if(nothingToArrange){
+ System.out.println("Students data is empty!");
+ }else{
+ System.out.println("Arrangement done. You can view the output in directory ./hall_allocations");
+ }}
+ private String getHtmlOut(ExamHall hall){
+ StringBuilder htmlBuilder = new StringBuilder();
+ htmlBuilder.append("<html><head><title>Hall "+hall.getHallNumber()+" | Floor :
+ "+hall.getHallFloor()+"</title></head><body><h1>Hall" + hall.getHallNumber()+ " | Floor : "
+ +hall.getHallFloor()+ "</h1><table border='1'>");
+ int count = 0;
+ HashMap<String, String> allocation = hall.getAllocation();
+ for (String rollNo : allocation.keySet()) {
+ String name = allocation.get(rollNo);
+ if (count % 4 == 0) {
+htmlBuilder.append("<tr>");
+ } htmlBuilder.append("<td>").append(rollNo).append("<br>").append(name).append("</
+ td>"); if (count % 4 == 3) {
+ htmlBuilder.append("</tr>");
+ }
+ count++;
+ }
+ if (count % 4 != 0) {
+ htmlBuilder.append("</tr>");
+ }
+ htmlBuilder.append("</table></body></html>");
+ return htmlBuilder.toString();
+ }
+ private void saveHtmlToFile(String html, String hallNo) {
+ try (BufferedWriter writer = new BufferedWriter(new FileWriter("/home/ashwa-zstch1135/My
+ projects/ExamHallArrangementJDBC/src/hall_allocations/hall_no_"+hallNo+".html"))) {
+ writer.write(html+tableCSS());
+ } catch (IOException e) {
+ ErrorUtil.logError(e.getMessage());
+ }
+ }
+ private String tableCSS (){
+ return "<style>body {font-family: Arial, sans-serif;}\n" +
+ "h1 {text-align: center;}\n" +
+ "table {width: 100%;border-collapse: collapse;margin: 20px;}\n" +
+ "table, td {border: 1px solid black;}\n" +
+ "td {padding: 10px;text-align: center;}</style>";
+ }
+ }
+ 16
+DBConnector
+ import java.io.FileInputStream; 
+import java.io.IOException; 
+import java.sql.*;
+ import java.util.HashMap; 
+import java.util.Properties; 
+public class DBConnector {
+ private Connection connectionObject;
+ DBConnector() throws ClassNotFoundException, SQLException 
+{ HashMap<String, String> propertiesMap = readProperties(); 
+Class.forName(propertiesMap.get("driverClassName"));
+ Connection connectionObject = DriverManager.getConnection(propertiesMap.get("url"),
+ propertiesMap.get("username"), propertiesMap.get("password"));
+ this.connectionObject = connectionObject;
+ }
+ private HashMap<String, String> readProperties(){
+ Properties properties = new Properties();
+ HashMap<String, String> propertiesMap = new HashMap<String, String>();
+ try {
+ FileInputStream fileInputStream = new FileInputStream("/home/ashwa-zstch1135/My
+ projects/ExamHallArrangementJDBC/src/MySQLConnection.properties");
+ properties.load(fileInputStream);
+ fileInputStream.close();
+ propertiesMap.put("url", properties.getProperty("database.url")); 
+propertiesMap.put("username", properties.getProperty("database.username")); 
+propertiesMap.put("password", properties.getProperty("database.password")); 
+propertiesMap.put("driverClassName", properties.getProperty("driverClassName"));
+ } catch (IOException e) {
+ ErrorUtil.logError(e.getMessage());
+ }
+ return propertiesMap;
+ }
+ 17
+public boolean ping() throws SQLException {
+ if (connectionObject != null) {
+ String pingSQL = "SELECT 1"; 
+connectionObject.createStatement().executeQuery(pingSQL); 
+return true;
+ }
+ return false;
+ }
+ public void closeConnection() throws SQLException { 
+connectionObject.close(); 
+System.out.println("Connection closed!");
+ }
+ public ResultSet getStudentsResultSet() throws SQLException 
+{ Statement statement = connectionObject.createStatement(); 
+String sqlQuery = "SELECT * FROM student_details"; 
+ResultSet resultSet = statement.executeQuery(sqlQuery); 
+return resultSet;
+ }
+ public ResultSet getExamHallsResultSet() throws SQLException 
+{ Statement statement = connectionObject.createStatement(); 
+String sqlQuery = "SELECT * FROM hall_details";
+ ResultSet resultSet = statement.executeQuery(sqlQuery); 
+return resultSet;
+ }
+ }
+ exam_allocation.sql
+ CREATE DATABASE IF NOT EXISTS exam_allocation;
+ USE exam_allocation;
+ CREATE TABLE IF NOT EXISTS student_details 
+( rollno VARCHAR(20) PRIMARY KEY, 
+student_name VARCHAR(50) NOT NULL
+ );
+ 18
+CREATE TABLE IF NOT EXISTS hall_details (
+ hall_no INT PRIMARY KEY, 
+hall_floor INT NOT NULL, 
+hall_capacity INT NOT NULL
+ );
+ INSERT INTO student_details (rollno, student_name) VALUES
+ ('SRMKTR1001', 'John Doe'), 
+('SRMKTR1002', 'Jane Smith'), 
+('SRMKTR1003', 'Alice Johnson'), 
+('SRMKTR1004', 'Bob Brown'), 
+('SRMKTR1005', 'Sarah Williams'), 
+('SRMKTR1006', 'David Lee'), 
+('SRMKTR1007', 'Ella Davis'), 
+('SRMKTR1008', 'William Harris'), 
+('SRMKTR1009', 'Olivia Martin'), 
+('SRMKTR1010', 'James Wilson'), 
+('SRMKTR1011', 'Lily Moore'), 
+('SRMKTR1012', 'Michael Clark'), 
+('SRMKTR1013', 'Sophia Turner'), 
+('SRMKTR1014', 'Robert Lewis'), 
+('SRMKTR1015', 'Ava White'), 
+('SRMKTR1016', 'Joseph Jackson'), 
+('SRMKTR1017', 'Emily Hall'), 
+('SRMKTR1018', 'Thomas Anderson'), 
+('SRMKTR1019', 'Mia Walker'), 
+('SRMKTR1020', 'Daniel Hill'), 
+('SRMKTR1021', 'Charlotte Parker'), 
+('SRMKTR1022', 'Matthew Green'), 
+('SRMKTR1023', 'Grace Adams'), 
+('SRMKTR1024', 'Andrew Baker'), 
+('SRMKTR1025', 'Chloe Wright'), 
+('SRMKTR1026', 'William Edwards'), 
+('SRMKTR1027', 'Abigail Cooper'), 
+('SRMKTR1028', 'Ethan Collins'), 
+('SRMKTR1029', 'Sophia Murphy'), 
+('SRMKTR1030', 'Liam Foster'),
+ 19
+('SRMKTR1031', 'Isabella Hayes'), 
+('SRMKTR1032', 'Christopher Stewart'), 
+('SRMKTR1033', 'Emma King'), 
+('SRMKTR1034', 'Nathan Scott'), 
+('SRMKTR1035', 'Avery Wood'), 
+('SRMKTR1036', 'Anthony Nelson'), 
+('SRMKTR1037', 'Harper Rivera'), 
+('SRMKTR1038', 'Nicholas Ward'), 
+('SRMKTR1039', 'Evelyn Rogers'), 
+('SRMKTR1040', 'David Mitchell'), 
+('SRMKTR1041', 'Addison Brooks'), 
+('SRMKTR1042', 'Joseph Bell'), 
+('SRMKTR1043', 'Natalie Gray'), 
+('SRMKTR1044', 'Jackson Jenkins'), 
+('SRMKTR1045', 'Aria Foster'), 
+('SRMKTR1046', 'Samuel Taylor'), 
+('SRMKTR1047', 'Lily Bennett'), 
+('SRMKTR1048', 'Benjamin Nelson'), 
+('SRMKTR1049', 'Zoe Johnson'), 
+('SRMKTR1050', 'Ashv');
+ INSERT INTO hall_details (hall_no, hall_floor, hall_capacity) VALUES
+ (1, 1, 16), 
+(2, 1, 20), 
+(3, 2, 10), 
+(4, 3, 4);
+ Exam Hall
+ import java.util.HashMap;
+ class ExamHall{
+ private int hallNumber; 
+private int hallFloor;
+ private HashMap<String,String> allocation = new HashMap<String,String>();
+ 20
+public int getHallNumber() {
+ return hallNumber;
+ }
+ public void setHallNumber(int hallNumber) {
+ this.hallNumber = hallNumber;
+ }
+ public int getHallFloor() {
+ return hallFloor;
+ }
+ public void setHallFloor(int hallFloor) {
+ this.hallFloor = hallFloor;
+ }
+ public HashMap<String,String> getAllocation(){
+ return this.allocation;
+ }
+ public void addAllocation(String rollNumber, String name) {
+ allocation.put(rollNumber, name);
+ }
+ }
+ Main
+ import java.sql.SQLException;
+ public class Main {
+ public static void main(String[] args) {
+ System.out.println("Arranging students in exam hall | JDBC demo project"); 
+ArrangementDriver arrDriver = new ArrangementDriver();
+ try {
+ arrDriver.run();
+ } catch (SQLException e) {
+ ErrorUtil.logError(e.getMessage());
+ } catch (ClassNotFoundException e) {
+ ErrorUtil.logError(e.getMessage());
+ }
+ }
+ 
